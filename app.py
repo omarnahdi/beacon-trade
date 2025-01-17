@@ -1,17 +1,46 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from config import Config
 from utils.email_util import send_registration_email
 from models.user_model import create_user_model
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
+from datetime import timedelta
 
 app = Flask(__name__)
 app.config.from_object(Config)
 db = SQLAlchemy(app)
 User = create_user_model(db)
 
+jwt = JWTManager(app)
 
 
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({'message': 'Email and password required'}), 400
+
+    user = User.query.filter_by(email=email).first()
+
+    if user and check_password_hash(user.password, password):
+        access_token = create_access_token(identity=user.id, expires_delta=timedelta(seconds=app.config.get('JWT_ACCESS_TOKEN_EXPIRES')))
+        return jsonify({'access_token': access_token}), 200
+    else:
+        return jsonify({'message': 'Invalid credentials'}), 401
+
+@app.route('/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({'message':'User not found'}), 404
+    return jsonify({'message': f'Hello, {user.first_name}! This is a protected resource', 'user_id': current_user_id}), 200
 
 @app.route('/', methods=['GET', 'POST'])
 def register():
@@ -35,6 +64,8 @@ def register():
         password = request.form.get('password')
         server_name = request.form.get('server_name')
         amount_deposited = request.form.get('amount_deposited')
+
+        print("Plain-text Password (for debugging):", password)
 
         hashed_password = generate_password_hash(password)
 
@@ -75,6 +106,8 @@ def register():
             db.session.rollback()
             flash(f'Error registering user: {str(e)}', 'error')
     return render_template('register.html')
+
+
 
 
 @app.route('/users')
