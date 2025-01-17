@@ -4,3 +4,4 @@ SQLAlchemy
 python-dotenv
 Werkzeug
 psycopg2-binary
+Flask-JWT-Extended
